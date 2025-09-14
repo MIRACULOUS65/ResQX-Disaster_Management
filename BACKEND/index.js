@@ -5,7 +5,7 @@ import connectDB from "./src/db/server.js";
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
-import { app } from "./src/app.js";
+const app = express();
 
 dotenv.config({
     path:'./.env'
@@ -19,12 +19,13 @@ connectDB()
         // Redirect to the disaster upload page
         res.redirect('/api/v1/disaster/upload');
     })
+    app.get("/api/health", (req, res) => res.json({ status: "express-ok" }));
     app.listen(process.env.PORT||3000,()=>{
         console.log(`Server is running on port ${process.env.PORT}`);
         console.log(`Visit: http://localhost:${process.env.PORT || 3000}`);
         console.log(`Disaster Upload: http://localhost:${process.env.PORT || 3000}/api/v1/disaster/upload`);
     });
-    app.get("/api/health", (req, res) => res.json({ status: "express-ok" }));
+   
 
 })         
 
