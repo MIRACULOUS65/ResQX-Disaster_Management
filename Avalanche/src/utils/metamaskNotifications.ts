@@ -6,7 +6,12 @@ declare global {
   interface Window {
     ethereum?: {
       isMetaMask: boolean;
+      isConnected?: () => boolean;
       request: (args: { method: string; params?: any[] }) => Promise<any>;
+      on?: (event: string, handler: (...args: any[]) => void) => void;
+      removeListener?: (event: string, handler: (...args: any[]) => void) => void;
+      selectedAddress?: string;
+      chainId?: string;
     };
   }
 }
@@ -26,29 +31,69 @@ export interface MetaMaskNotificationOptions {
   priority: 'low' | 'medium' | 'high' | 'critical';
   requireInteraction?: boolean;
   data?: any;
+  timeout?: number; // Timeout in milliseconds
+  retryAttempts?: number; // Number of retry attempts
+}
+
+export interface MetaMaskError extends Error {
+  code: number;
+  message: string;
+  data?: any;
+}
+
+export interface MetaMaskConnectionStatus {
+  isInstalled: boolean;
+  isConnected: boolean;
+  account?: string;
+  chainId?: string;
+  error?: string;
 }
 
 // Check if MetaMask is installed and available
 export function isMetaMaskInstalled(): boolean {
   return typeof window !== 'undefined' && 
          typeof window.ethereum !== 'undefined' && 
-         window.ethereum.isMetaMask;
+         window.ethereum.isMetaMask === true;
+}
+
+// Get comprehensive MetaMask connection status
+export async function getMetaMaskStatus(): Promise<MetaMaskConnectionStatus> {
+  const status: MetaMaskConnectionStatus = {
+    isInstalled: isMetaMaskInstalled(),
+    isConnected: false
+  };
+
+  if (!status.isInstalled) {
+    status.error = 'MetaMask is not installed';
+    return status;
+  }
+
+  try {
+    const accounts = await window.ethereum!.request({ method: 'eth_accounts' });
+    status.isConnected = accounts.length > 0;
+    status.account = accounts[0];
+    
+    // Get chain ID
+    try {
+      const chainId = await window.ethereum!.request({ method: 'eth_chainId' });
+      status.chainId = chainId;
+    } catch (chainError) {
+      console.warn('Could not get chain ID:', chainError);
+    }
+  } catch (error) {
+    status.error = error instanceof Error ? error.message : 'Unknown error';
+  }
+
+  return status;
 }
 
 // Check if MetaMask is connected
 export async function isMetaMaskConnected(): Promise<boolean> {
-  if (!isMetaMaskInstalled() || !window.ethereum) return false;
-  
-  try {
-    const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-    return accounts.length > 0;
-  } catch (error) {
-    console.error('Error checking MetaMask connection:', error);
-    return false;
-  }
+  const status = await getMetaMaskStatus();
+  return status.isConnected;
 }
 
-// Request MetaMask connection
+// Request MetaMask connection with better error handling
 export async function connectMetaMask(): Promise<string[]> {
   if (!isMetaMaskInstalled() || !window.ethereum) {
     throw new Error('MetaMask is not installed');
@@ -58,20 +103,34 @@ export async function connectMetaMask(): Promise<string[]> {
     const accounts = await window.ethereum.request({ 
       method: 'eth_requestAccounts' 
     });
+    
+    if (!accounts || accounts.length === 0) {
+      throw new Error('No accounts returned from MetaMask');
+    }
+    
     return accounts;
-  } catch (error) {
-    console.error('Error connecting to MetaMask:', error);
-    throw error;
+  } catch (error: any) {
+    const metaMaskError: MetaMaskError = {
+      name: 'MetaMaskConnectionError',
+      message: error.message || 'Failed to connect to MetaMask',
+      code: error.code || -1,
+      data: error.data
+    };
+    
+    console.error('Error connecting to MetaMask:', metaMaskError);
+    throw metaMaskError;
   }
 }
 
-// Send a disaster alert notification through MetaMask
+// Send a disaster alert notification through MetaMask with retry logic
 export async function sendMetaMaskNotification(
   payload: MetaMaskNotificationPayload,
   options: MetaMaskNotificationOptions = {
     type: 'alert',
     priority: 'high',
-    requireInteraction: true
+    requireInteraction: true,
+    timeout: 30000, // 30 seconds timeout
+    retryAttempts: 3
   }
 ): Promise<boolean> {
   if (!isMetaMaskInstalled()) {
@@ -79,47 +138,84 @@ export async function sendMetaMaskNotification(
     return false;
   }
 
-  try {
-    // Check if MetaMask is connected
-    const isConnected = await isMetaMaskConnected();
-    if (!isConnected) {
-      console.warn('MetaMask is not connected, falling back to browser notifications');
-      return false;
-    }
+  const maxRetries = options.retryAttempts || 3;
+  const timeout = options.timeout || 30000;
 
-    // For disaster alerts, we'll use personal_sign as the primary method
-    // This will show a MetaMask popup that the user must interact with
-    // This is the most reliable way to get user attention through MetaMask
-
-    console.log('🚨 Sending disaster alert through MetaMask...');
-    
-    // Primary method: Use personal_sign to get user acknowledgment
-    // This will show a MetaMask popup that the user must interact with
-    const signatureSuccess = await sendMetaMaskSignatureNotification(payload);
-    
-    if (signatureSuccess) {
-      console.log('✅ MetaMask signature notification sent successfully');
-      return true;
-    }
-
-    // If signature fails, try transaction method as backup
-    // This might trigger wallet activity notifications if enabled
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      console.log('🔄 Trying transaction method as backup...');
-      const txSuccess = await createNotificationTransaction(payload, options);
-      if (txSuccess) {
-        console.log('✅ MetaMask transaction notification sent successfully');
+      console.log(`🚨 Sending disaster alert through MetaMask (attempt ${attempt}/${maxRetries})...`);
+      
+      // Check if MetaMask is connected
+      const isConnected = await isMetaMaskConnected();
+      if (!isConnected) {
+        console.warn('MetaMask is not connected, falling back to browser notifications');
+        return false;
+      }
+
+      // Primary method: Try simple popup first
+      const simpleSuccess = await Promise.race([
+        sendMetaMaskSimpleNotification(payload),
+        new Promise<boolean>((_, reject) => 
+          setTimeout(() => reject(new Error('Simple notification timeout')), timeout)
+        )
+      ]);
+      
+      if (simpleSuccess) {
+        console.log('✅ MetaMask simple notification sent successfully');
         return true;
       }
-    } catch (txError) {
-      console.warn('Transaction notification also failed');
-    }
 
-    return false;
-  } catch (error) {
-    console.error('Error sending MetaMask notification:', error);
-    return false;
+      // Fallback method: Use personal_sign to get user acknowledgment
+      const signatureSuccess = await Promise.race([
+        sendMetaMaskSignatureNotification(payload),
+        new Promise<boolean>((_, reject) => 
+          setTimeout(() => reject(new Error('Signature timeout')), timeout)
+        )
+      ]);
+      
+      if (signatureSuccess) {
+        console.log('✅ MetaMask signature notification sent successfully');
+        return true;
+      }
+
+      // If signature fails, try transaction method as backup
+      if (attempt === maxRetries) {
+        console.log('🔄 Trying transaction method as final backup...');
+        try {
+          const txSuccess = await Promise.race([
+            createNotificationTransaction(payload, options),
+            new Promise<any>((_, reject) => 
+              setTimeout(() => reject(new Error('Transaction timeout')), timeout)
+            )
+          ]);
+          
+          if (txSuccess) {
+            console.log('✅ MetaMask transaction notification sent successfully');
+            return true;
+          }
+        } catch (txError) {
+          console.warn('Transaction notification also failed:', txError);
+        }
+      }
+
+      // Wait before retry (exponential backoff)
+      if (attempt < maxRetries) {
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+        console.log(`⏳ Waiting ${delay}ms before retry...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+
+    } catch (error) {
+      console.error(`Error sending MetaMask notification (attempt ${attempt}):`, error);
+      
+      if (attempt === maxRetries) {
+        console.error('All MetaMask notification attempts failed');
+        return false;
+      }
+    }
   }
+
+  return false;
 }
 
 // Create a notification transaction that will trigger MetaMask notifications
@@ -239,6 +335,48 @@ This signature confirms you have been notified of this critical disaster alert.`
       return false;
     }
     console.error('Error sending MetaMask signature notification:', error);
+    return false;
+  }
+}
+
+// Simple method: Just request accounts to trigger MetaMask popup
+export async function sendMetaMaskSimpleNotification(
+  payload: MetaMaskNotificationPayload
+): Promise<boolean> {
+  if (!isMetaMaskInstalled() || !window.ethereum) {
+    return false;
+  }
+
+  try {
+    console.log('🔔 Triggering MetaMask popup for disaster alert...');
+    
+    // This will trigger a MetaMask popup asking for account access
+    const accounts = await window.ethereum.request({ 
+      method: 'eth_requestAccounts' 
+    });
+
+    if (accounts && accounts.length > 0) {
+      console.log('✅ MetaMask popup triggered successfully');
+      
+      // Also show a browser notification as backup
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification(payload.title, {
+          body: payload.message,
+          icon: '/favicon.ico',
+          tag: `disaster-${payload.disasterType}-${payload.timestamp}`
+        });
+      }
+      
+      return true;
+    }
+
+    return false;
+  } catch (error: any) {
+    if (error.code === 4001) {
+      console.log('❌ User rejected the MetaMask popup');
+      return false;
+    }
+    console.error('Error triggering MetaMask popup:', error);
     return false;
   }
 }

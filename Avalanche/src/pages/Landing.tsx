@@ -1,8 +1,8 @@
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { useUser, SignInButton, UserButton } from "@clerk/clerk-react";
-import { useNavigate } from "react-router";
 import { useState } from "react";
+import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/clerk-react";
+import { useNavigate } from "react-router-dom";
 import { 
   Shield, 
   Users, 
@@ -30,11 +30,62 @@ import DisasterAlertModal from "../components/DisasterAlertModal";
 import NotificationThemeModal from "../components/NotificationThemeModal";
 import NotificationThemeDemo from "@/components/NotificationThemeDemo";
 
-export default function Landing() {
+// Auth Section Component
+function AuthSection() {
+  const navigate = useNavigate();
+  
   // Check if Clerk is available
   const isClerkAvailable = !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
-  const { isSignedIn } = isClerkAvailable ? useUser() : { isSignedIn: false };
-  const navigate = useNavigate();
+  
+  if (!isClerkAvailable) {
+    return (
+      <div className="flex items-center gap-3">
+        <Button 
+          onClick={() => navigate('/dashboard')}
+          className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium px-6"
+        >
+          Go to Dashboard
+        </Button>
+        <div className="text-sm text-muted-foreground">
+          (Auth not configured)
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <SignedOut>
+        <SignInButton mode="modal" fallbackRedirectUrl="/">
+          <Button className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium px-6">
+            Sign In
+          </Button>
+        </SignInButton>
+      </SignedOut>
+      <SignedIn>
+        <div className="flex items-center gap-3">
+          <Button 
+            onClick={() => navigate('/dashboard')}
+            variant="outline"
+            className="font-medium px-4"
+          >
+            Dashboard
+          </Button>
+          <UserButton 
+            afterSignOutUrl="/"
+            appearance={{
+              elements: {
+                avatarBox: "w-10 h-10"
+              }
+            }}
+          />
+        </div>
+      </SignedIn>
+    </>
+  );
+}
+
+export default function Landing() {
   const [isDisasterMapOpen, setIsDisasterMapOpen] = useState(false);
   const [isDisasterAlertOpen, setIsDisasterAlertOpen] = useState(false);
   const [isNotificationThemeOpen, setIsNotificationThemeOpen] = useState(false);
@@ -140,48 +191,10 @@ export default function Landing() {
               ))}
             </div>
 
-            {/* Sign In Button / Profile */}
-            <motion.div whileHover={{ y: -1 }} whileTap={{ scale: 0.98 }}>
-              {isClerkAvailable ? (
-                isSignedIn ? (
-                  <div className="flex items-center gap-3">
-                    <Button 
-                      onClick={() => navigate('/dashboard')}
-                      variant="outline"
-                      className="font-medium px-4"
-                    >
-                      Dashboard
-                    </Button>
-                    <UserButton 
-                      afterSignOutUrl="/"
-                      appearance={{
-                        elements: {
-                          avatarBox: "w-10 h-10"
-                        }
-                      }}
-                    />
-                  </div>
-                ) : (
-                  <SignInButton mode="modal" fallbackRedirectUrl="/">
-                    <Button className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium px-6">
-                      Sign In
-                    </Button>
-                  </SignInButton>
-                )
-              ) : (
-                <div className="flex items-center gap-3">
-                  <Button 
-                    onClick={() => navigate('/dashboard')}
-                    className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium px-6"
-                  >
-                    Go to Dashboard
-                  </Button>
-                  <div className="text-sm text-muted-foreground">
-                    (Auth not configured)
-                  </div>
-                </div>
-              )}
-            </motion.div>
+            {/* Auth Component - Extract just the auth part */}
+            <div className="flex items-center">
+              <AuthSection />
+            </div>
           </div>
         </div>
       </motion.nav>

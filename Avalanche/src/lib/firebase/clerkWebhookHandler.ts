@@ -1,5 +1,5 @@
 import { userService } from './userService';
-import { db } from './firebaseClientConfig';
+import { db } from './firestoreConfig';
 
 /**
  * Types for Clerk webhook events

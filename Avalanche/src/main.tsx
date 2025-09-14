@@ -16,10 +16,13 @@ import { ProtectedRoute } from "./components/ProtectedRoute";
 // Import your Publishable Key
 const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
+console.log('Environment variables:', import.meta.env);
+console.log('Clerk PUBLISHABLE_KEY:', PUBLISHABLE_KEY);
+
 if (!PUBLISHABLE_KEY) {
-  console.warn('VITE_CLERK_PUBLISHABLE_KEY not found. Please add it to your .env file for authentication to work properly.');
-  // For development purposes, we'll use a placeholder key
-  // In production, you MUST provide a real Clerk publishable key
+  console.error('Clerk PUBLISHABLE_KEY is missing or undefined');
+  console.error('Available env vars:', Object.keys(import.meta.env));
+  throw new Error('Add your Clerk Publishable Key to the .env file');
 }
 
 
@@ -48,20 +51,8 @@ function RouteSyncer() {
 }
 
 
-// Create a fallback component for when Clerk is not configured
-function AppWithoutAuth() {
-  return (
-    <BrowserRouter>
-      <RouteSyncer />
-      <Routes>
-        <Route path="/" element={<Landing />} />
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="*" element={<NotFound />} />
-      </Routes>
-      <Toaster />
-    </BrowserRouter>
-  );
-}
+// This component is no longer needed as we've restructured the app to use a single BrowserRouter
+// The functionality has been moved directly into the main render tree
 
 // Simple error boundary to catch any rendering errors
 function ErrorBoundary({ children }: { children: React.ReactNode }) {
@@ -95,25 +86,21 @@ createRoot(document.getElementById("root")!).render(
     <ErrorBoundary>
       <VlyToolbar />
       <InstrumentationProvider>
-        {PUBLISHABLE_KEY ? (
+        <BrowserRouter>
+          <RouteSyncer />
           <ClerkProvider publishableKey={PUBLISHABLE_KEY}>
-            <BrowserRouter>
-              <RouteSyncer />
-              <Routes>
-                <Route path="/" element={<Landing />} />
-                <Route path="/dashboard" element={
-                  <ProtectedRoute>
-                    <Dashboard />
-                  </ProtectedRoute>
-                } />
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-            </BrowserRouter>
+            <Routes>
+              <Route path="/" element={<Landing />} />
+              <Route path="/dashboard" element={
+                <ProtectedRoute>
+                  <Dashboard />
+                </ProtectedRoute>
+              } />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
             <Toaster />
           </ClerkProvider>
-        ) : (
-          <AppWithoutAuth />
-        )}
+        </BrowserRouter>
       </InstrumentationProvider>
     </ErrorBoundary>
   </StrictMode>,

@@ -1,12 +1,21 @@
 // Real-time Disaster Notification Service
 import { disasterService } from './disasterService';
 import type { Disaster, DisasterEvent, DisasterNotificationPayload } from '../../types/disaster';
+import { 
+  sendDisasterNotification, 
+  createDisasterNotificationPayload,
+  isMetaMaskInstalled,
+  isMetaMaskConnected,
+  getMetaMaskStatus
+} from '../../utils/metamaskNotifications';
 
 export class DisasterNotificationService {
   private static instance: DisasterNotificationService;
   private isListening = false;
   private listeners: (() => void)[] = [];
   private notificationHandlers: ((payload: DisasterNotificationPayload) => void)[] = [];
+  private metaMaskEnabled = false;
+  private metaMaskStatus: { installed: boolean; connected: boolean } = { installed: false, connected: false };
 
   static getInstance(): DisasterNotificationService {
     if (!DisasterNotificationService.instance) {
@@ -24,6 +33,9 @@ export class DisasterNotificationService {
 
     console.log('🔔 Starting disaster notification service...');
     this.isListening = true;
+    
+    // Initialize MetaMask status
+    this.initializeMetaMask();
 
     // Listen for disaster events
     const unsubscribeEvents = disasterService.subscribeToDisasterEvents((event) => {
@@ -74,6 +86,7 @@ export class DisasterNotificationService {
     if (notificationPayload) {
       this.notifyHandlers(notificationPayload);
       this.showBrowserNotification(notificationPayload);
+      this.sendMetaMaskNotification(notificationPayload);
     }
   }
 
@@ -237,6 +250,87 @@ export class DisasterNotificationService {
     } catch (error) {
       console.error('Error getting active disaster count:', error);
       return 0;
+    }
+  }
+
+  // Initialize MetaMask status
+  private async initializeMetaMask(): Promise<void> {
+    try {
+      this.metaMaskStatus.installed = isMetaMaskInstalled();
+      if (this.metaMaskStatus.installed) {
+        this.metaMaskStatus.connected = await isMetaMaskConnected();
+        this.metaMaskEnabled = this.metaMaskStatus.installed && this.metaMaskStatus.connected;
+        
+        console.log(`🦊 MetaMask status: ${this.metaMaskStatus.installed ? 'Installed' : 'Not installed'}, ${this.metaMaskStatus.connected ? 'Connected' : 'Not connected'}`);
+        
+        if (this.metaMaskEnabled) {
+          console.log('✅ MetaMask notifications enabled');
+        } else {
+          console.log('⚠️ MetaMask notifications disabled - will use browser notifications only');
+        }
+      }
+    } catch (error) {
+      console.error('Error initializing MetaMask:', error);
+      this.metaMaskEnabled = false;
+    }
+  }
+
+  // Send MetaMask notification
+  private async sendMetaMaskNotification(payload: DisasterNotificationPayload): Promise<void> {
+    if (!this.metaMaskEnabled) {
+      console.log('🦊 MetaMask not available, skipping MetaMask notification');
+      return;
+    }
+
+    try {
+      // Convert disaster notification payload to MetaMask payload
+      const metaMaskPayload = createDisasterNotificationPayload(
+        payload.disaster.disasterType,
+        payload.disaster.severityLevel,
+        payload.disaster.location,
+        payload.disaster.reporterName || payload.disaster.reporterEmail,
+        payload.disaster.timestamp
+      );
+
+      // Send MetaMask notification with appropriate options
+      const options = {
+        type: 'alert' as const,
+        priority: payload.priority === 'critical' ? 'critical' as const : 
+                 payload.priority === 'high' ? 'high' as const : 
+                 payload.priority === 'medium' ? 'medium' as const : 'low' as const,
+        requireInteraction: payload.requiresAction,
+        timeout: 30000,
+        retryAttempts: 3
+      };
+
+      console.log('🦊 Sending MetaMask notification...');
+      const success = await sendDisasterNotification(metaMaskPayload, options);
+      
+      if (success) {
+        console.log('✅ MetaMask notification sent successfully');
+      } else {
+        console.log('⚠️ MetaMask notification failed, but browser notification was sent');
+      }
+    } catch (error) {
+      console.error('❌ Error sending MetaMask notification:', error);
+    }
+  }
+
+  // Get MetaMask status
+  getMetaMaskStatus(): { installed: boolean; connected: boolean; enabled: boolean } {
+    return {
+      ...this.metaMaskStatus,
+      enabled: this.metaMaskEnabled
+    };
+  }
+
+  // Enable/disable MetaMask notifications
+  async setMetaMaskEnabled(enabled: boolean): Promise<void> {
+    if (enabled) {
+      await this.initializeMetaMask();
+    } else {
+      this.metaMaskEnabled = false;
+      console.log('🦊 MetaMask notifications disabled by user');
     }
   }
 }

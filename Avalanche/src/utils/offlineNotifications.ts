@@ -12,6 +12,8 @@ export interface OfflineNotificationPayload {
   message: string;
   title: string;
   id: string;
+  range?: number; // in kilometers
+  expiresAt?: number; // timestamp when this notification expires
 }
 
 export interface P2PConnection {
@@ -19,6 +21,34 @@ export interface P2PConnection {
   peerConnection: RTCPeerConnection;
   dataChannel: RTCDataChannel;
   isConnected: boolean;
+  lastSeen: number;
+  metadata?: {
+    deviceType?: string;
+    location?: { lat: number; lng: number };
+    capabilities?: string[];
+  };
+}
+
+export interface OfflineNotificationConfig {
+  maxRetries: number;
+  retryDelay: number;
+  connectionTimeout: number;
+  maxConnections: number;
+  messageExpiry: number; // in milliseconds
+  enableP2P: boolean;
+  enableLocalStorage: boolean;
+}
+
+export class OfflineNotificationError extends Error {
+  code: 'CONNECTION_FAILED' | 'MESSAGE_SEND_FAILED' | 'STORAGE_ERROR' | 'P2P_ERROR' | 'PERMISSION_DENIED';
+  details?: any;
+
+  constructor(message: string, code: OfflineNotificationError['code'], details?: any) {
+    super(message);
+    this.name = 'OfflineNotificationError';
+    this.code = code;
+    this.details = details;
+  }
 }
 
 class OfflineNotificationManager {
@@ -29,17 +59,46 @@ class OfflineNotificationManager {
   private messageHandlers: ((message: OfflineNotificationPayload) => void)[] = [];
   private instanceId: string;
   private storageKey: string;
+  private config: OfflineNotificationConfig;
+  private cleanupInterval: NodeJS.Timeout | null = null;
+  private connectionCheckInterval: NodeJS.Timeout | null = null;
+  private isInitialized: boolean = false;
 
-  constructor(instanceId?: string) {
+  constructor(instanceId?: string, config?: Partial<OfflineNotificationConfig>) {
     // Generate unique instance ID for this tab/session
     this.instanceId = instanceId || `offline_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     this.storageKey = `offline_notifications_${this.instanceId}`;
     
+    // Default configuration
+    this.config = {
+      maxRetries: 3,
+      retryDelay: 1000,
+      connectionTimeout: 10000,
+      maxConnections: 5,
+      messageExpiry: 24 * 60 * 60 * 1000, // 24 hours
+      enableP2P: true,
+      enableLocalStorage: true,
+      ...config
+    };
+    
     console.log(`🔧 Initializing Offline Manager for instance: ${this.instanceId}`);
     
-    this.setupEventListeners();
-    this.initializeServiceWorker();
-    this.loadMessageQueue();
+    this.initialize();
+  }
+
+  private async initialize() {
+    try {
+      this.setupEventListeners();
+      await this.initializeServiceWorker();
+      await this.loadMessageQueue();
+      this.startCleanupInterval();
+      this.startConnectionCheck();
+      this.isInitialized = true;
+      console.log('✅ Offline Notification Manager initialized successfully');
+    } catch (error) {
+      console.error('❌ Failed to initialize Offline Notification Manager:', error);
+      throw error;
+    }
   }
 
   private setupEventListeners() {
@@ -90,14 +149,76 @@ class OfflineNotificationManager {
   }
 
   private async loadMessageQueue() {
+    if (!this.config.enableLocalStorage) return;
+    
     try {
       const stored = localStorage.getItem(this.storageKey);
       if (stored) {
-        this.messageQueue = JSON.parse(stored);
+        const messages = JSON.parse(stored);
+        // Filter out expired messages
+        const now = Date.now();
+        this.messageQueue = messages.filter((msg: OfflineNotificationPayload) => 
+          !msg.expiresAt || msg.expiresAt > now
+        );
         console.log(`📦 Loaded ${this.messageQueue.length} queued messages for instance ${this.instanceId}`);
       }
     } catch (error) {
       console.error('Error loading message queue:', error);
+      this.messageQueue = [];
+    }
+  }
+
+  private startCleanupInterval() {
+    // Clean up expired messages every hour
+    this.cleanupInterval = setInterval(() => {
+      this.cleanupExpiredMessages();
+    }, 60 * 60 * 1000);
+  }
+
+  private startConnectionCheck() {
+    // Check connection health every 30 seconds
+    this.connectionCheckInterval = setInterval(() => {
+      this.checkConnectionHealth();
+    }, 30 * 1000);
+  }
+
+  private cleanupExpiredMessages() {
+    const now = Date.now();
+    const initialCount = this.messageQueue.length;
+    
+    this.messageQueue = this.messageQueue.filter(msg => 
+      !msg.expiresAt || msg.expiresAt > now
+    );
+    
+    const removedCount = initialCount - this.messageQueue.length;
+    if (removedCount > 0) {
+      console.log(`🧹 Cleaned up ${removedCount} expired messages`);
+      this.saveMessageQueue();
+    }
+  }
+
+  private checkConnectionHealth() {
+    const now = Date.now();
+    const staleThreshold = 60 * 1000; // 1 minute
+    
+    for (const [peerId, connection] of this.connections) {
+      if (now - connection.lastSeen > staleThreshold) {
+        console.log(`🔌 Removing stale connection: ${peerId}`);
+        this.disconnectPeer(peerId);
+      }
+    }
+  }
+
+  private disconnectPeer(peerId: string) {
+    const connection = this.connections.get(peerId);
+    if (connection) {
+      try {
+        connection.dataChannel.close();
+        connection.peerConnection.close();
+      } catch (error) {
+        console.warn('Error closing connection:', error);
+      }
+      this.connections.delete(peerId);
     }
   }
 
@@ -109,43 +230,85 @@ class OfflineNotificationManager {
     }
   }
 
-  // Send notification (works online and offline)
+  // Send notification (works online and offline) with retry logic
   async sendNotification(payload: OfflineNotificationPayload): Promise<boolean> {
+    if (!this.isInitialized) {
+      throw new OfflineNotificationError('Manager not initialized', 'P2P_ERROR');
+    }
+
     console.log('🚨 Sending disaster notification:', payload);
+
+    // Add expiry time if not set
+    if (!payload.expiresAt) {
+      payload.expiresAt = Date.now() + this.config.messageExpiry;
+    }
 
     // Always store locally first
     this.messageQueue.unshift(payload);
     await this.saveMessageQueue();
 
+    let success = false;
+    let lastError: Error | null = null;
+
     // Try online methods first
     if (this.isOnline) {
-      try {
-        // Try MetaMask first
-        const metaMaskSuccess = await this.sendMetaMaskNotification(payload);
-        if (metaMaskSuccess) {
-          console.log('✅ MetaMask notification sent');
-          return true;
-        }
+      for (let attempt = 1; attempt <= this.config.maxRetries; attempt++) {
+        try {
+          console.log(`🌐 Attempting online notification (attempt ${attempt}/${this.config.maxRetries})`);
+          
+          // Try MetaMask first
+          const metaMaskSuccess = await this.sendMetaMaskNotification(payload);
+          if (metaMaskSuccess) {
+            console.log('✅ MetaMask notification sent');
+            success = true;
+            break;
+          }
 
-        // Try browser notification
-        const browserSuccess = await this.sendBrowserNotification(payload);
-        if (browserSuccess) {
-          console.log('✅ Browser notification sent');
-          return true;
+          // Try browser notification
+          const browserSuccess = await this.sendBrowserNotification(payload);
+          if (browserSuccess) {
+            console.log('✅ Browser notification sent');
+            success = true;
+            break;
+          }
+
+          // Wait before retry
+          if (attempt < this.config.maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, this.config.retryDelay * attempt));
+          }
+        } catch (error) {
+          lastError = error as Error;
+          console.warn(`Online notification attempt ${attempt} failed:`, error);
         }
-      } catch (error) {
-        console.warn('Online notification failed, switching to offline mode');
       }
     }
 
-    // Offline methods
-    console.log('📡 Sending via P2P network...');
-    await this.broadcastToPeers(payload);
+    // If online methods failed or we're offline, try P2P
+    if (!success && this.config.enableP2P) {
+      try {
+        console.log('📡 Sending via P2P network...');
+        await this.broadcastToPeers(payload);
+        success = true;
+      } catch (error) {
+        lastError = error as Error;
+        console.error('P2P notification failed:', error);
+      }
+    }
     
-    // Show local notification
+    // Always show local notification as fallback
     this.showLocalNotification(payload);
 
-    return true;
+    if (!success && lastError) {
+      const offlineError: OfflineNotificationError = {
+        name: 'OfflineNotificationError',
+        message: 'Failed to send notification through all channels',
+        code: 'MESSAGE_SEND_FAILED',
+        details: lastError
+      };
+      throw offlineError;
+    }
+
+    return success;
   }
 
   private async sendMetaMaskNotification(payload: OfflineNotificationPayload): Promise<boolean> {
@@ -293,7 +456,8 @@ class OfflineNotificationManager {
           id: peerId,
           peerConnection,
           dataChannel,
-          isConnected: true
+          isConnected: true,
+          lastSeen: Date.now()
         };
         this.connections.set(peerId, connection);
       };
@@ -390,13 +554,62 @@ class OfflineNotificationManager {
     this.messageQueue = [];
     this.saveMessageQueue();
   }
+
+  // Cleanup method to properly dispose of resources
+  destroy() {
+    console.log('🧹 Destroying Offline Notification Manager...');
+    
+    // Clear intervals
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
+    
+    if (this.connectionCheckInterval) {
+      clearInterval(this.connectionCheckInterval);
+      this.connectionCheckInterval = null;
+    }
+    
+    // Close all P2P connections
+    for (const [peerId, connection] of this.connections) {
+      this.disconnectPeer(peerId);
+    }
+    
+    // Clear message handlers
+    this.messageHandlers = [];
+    
+    // Mark as not initialized
+    this.isInitialized = false;
+    
+    console.log('✅ Offline Notification Manager destroyed');
+  }
+
+  // Update configuration
+  updateConfig(newConfig: Partial<OfflineNotificationConfig>) {
+    this.config = { ...this.config, ...newConfig };
+    console.log('⚙️ Configuration updated:', this.config);
+  }
+
+  // Get current status
+  getStatus() {
+    return {
+      isInitialized: this.isInitialized,
+      isOnline: this.isOnline,
+      connectionCount: this.connections.size,
+      queuedMessages: this.messageQueue.length,
+      config: this.config
+    };
+  }
 }
 
 // Factory function to create new instances instead of singleton
 let offlineInstanceCounter = 0;
-export function createOfflineNotificationManager(instanceId?: string): OfflineNotificationManager {
+export function createOfflineNotificationManager(
+  instanceId?: string, 
+  config?: Partial<OfflineNotificationConfig>
+): OfflineNotificationManager {
   const id = instanceId || `offline_instance_${++offlineInstanceCounter}_${Date.now()}`;
-  return new OfflineNotificationManager(id);
+  return new OfflineNotificationManager(id, config);
 }
 
 // Default instance for backward compatibility (but each tab should create its own)

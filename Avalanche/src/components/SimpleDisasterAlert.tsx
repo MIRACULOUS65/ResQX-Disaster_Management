@@ -6,7 +6,14 @@ import { disasterService } from "@/lib/firebase/disasterService";
 import { disasterNotificationService } from "@/lib/firebase/disasterNotificationService";
 import { useUser } from "@clerk/clerk-react";
 import type { Disaster, DisasterCreateInput } from "@/types/disaster";
-import { isMetaMaskInstalled, connectMetaMask, isMetaMaskConnected } from "../utils/metamaskNotifications";
+import { 
+  isMetaMaskInstalled, 
+  connectMetaMask, 
+  isMetaMaskConnected, 
+  sendDisasterNotification,
+  createDisasterNotificationPayload,
+  getMetaMaskStatus
+} from "../utils/metamaskNotifications";
 
 export default function SimpleDisasterAlert() {
   const { user } = useUser();
@@ -16,10 +23,12 @@ export default function SimpleDisasterAlert() {
     installed: boolean;
     connected: boolean;
     connecting: boolean;
+    enabled: boolean;
   }>({
     installed: false,
     connected: false,
-    connecting: false
+    connecting: false,
+    enabled: false
   });
   const [disasters, setDisasters] = useState<Disaster[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,14 +68,23 @@ export default function SimpleDisasterAlert() {
       await loadDisasters();
 
       // Check MetaMask status
-      const installed = isMetaMaskInstalled();
-      const connected = installed ? await isMetaMaskConnected() : false;
-      
-      setMetaMaskStatus({
-        installed,
-        connected,
-        connecting: false
-      });
+      try {
+        const status = await getMetaMaskStatus();
+        setMetaMaskStatus({
+          installed: status.isInstalled,
+          connected: status.isConnected,
+          connecting: false,
+          enabled: status.isInstalled && status.isConnected
+        });
+      } catch (error) {
+        console.error('Error checking MetaMask status:', error);
+        setMetaMaskStatus({
+          installed: false,
+          connected: false,
+          connecting: false,
+          enabled: false
+        });
+      }
 
     } catch (error) {
       console.error('Error initializing disaster service:', error);
@@ -90,18 +108,56 @@ export default function SimpleDisasterAlert() {
     
     try {
       await connectMetaMask();
-      setMetaMaskStatus(prev => ({ 
-        ...prev, 
-        connected: true, 
-        connecting: false 
-      }));
+      // Re-check status after connection
+      const status = await getMetaMaskStatus();
+      setMetaMaskStatus({
+        installed: status.isInstalled,
+        connected: status.isConnected,
+        connecting: false,
+        enabled: status.isInstalled && status.isConnected
+      });
     } catch (error) {
       console.error('Failed to connect to MetaMask:', error);
       setMetaMaskStatus(prev => ({ 
         ...prev, 
         connected: false, 
-        connecting: false 
+        connecting: false,
+        enabled: false
       }));
+    }
+  };
+
+  // Test MetaMask notification directly
+  const testMetaMaskNotification = async () => {
+    if (!metaMaskStatus.enabled) {
+      alert('Please connect MetaMask first!');
+      return;
+    }
+
+    try {
+      const testPayload = createDisasterNotificationPayload(
+        'avalanche',
+        8,
+        { lat: 46.5197, lng: 6.6323 },
+        'Test User',
+        Date.now()
+      );
+
+      console.log('🧪 Testing MetaMask notification...');
+      const success = await sendDisasterNotification(testPayload, {
+        type: 'alert',
+        priority: 'critical',
+        requireInteraction: true
+      });
+
+      if (success) {
+        alert('✅ MetaMask notification sent successfully! Check your MetaMask popup.');
+      } else {
+        alert('❌ MetaMask notification failed. Check console for details.');
+      }
+    } catch (error) {
+      console.error('Error testing MetaMask notification:', error);
+      alert('❌ Error testing MetaMask notification. Check console for details.');
     }
   };
 
@@ -232,6 +288,18 @@ export default function SimpleDisasterAlert() {
             >
               <XCircle className="h-4 w-4" />
               MetaMask Not Installed
+            </Button>
+          )}
+
+          {metaMaskStatus.enabled && (
+            <Button 
+              onClick={testMetaMaskNotification}
+              variant="secondary"
+              size="sm"
+              className="flex items-center gap-2"
+            >
+              <MessageSquare className="h-4 w-4" />
+              Test MetaMask Notification
             </Button>
           )}
         </div>
