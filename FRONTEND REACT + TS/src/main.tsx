@@ -10,6 +10,7 @@ import Landing from "./pages/Landing.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import "./types/global.d.ts";
 import Dashboard from "./pages/Dashboard.tsx";
+import RescueTeam from "./pages/RescueTeam.tsx";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 // P2P notifier will be imported when needed
 
@@ -91,6 +92,7 @@ createRoot(document.getElementById("root")!).render(
           <ClerkProvider publishableKey={PUBLISHABLE_KEY}>
             <Routes>
               <Route path="/" element={<Landing />} />
+              <Route path="/rescue-team" element={<RescueTeam />} />
               <Route path="/dashboard" element={
                 <ProtectedRoute>
                   <Dashboard />

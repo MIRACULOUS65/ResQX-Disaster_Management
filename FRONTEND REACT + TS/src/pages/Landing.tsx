@@ -86,6 +86,7 @@ function AuthSection() {
 }
 
 export default function Landing() {
+  const navigate = useNavigate();
   const [isDisasterMapOpen, setIsDisasterMapOpen] = useState(false);
   const [isDisasterAlertOpen, setIsDisasterAlertOpen] = useState(false);
   const [isNotificationThemeOpen, setIsNotificationThemeOpen] = useState(false);
@@ -99,13 +100,13 @@ export default function Landing() {
 
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-white">
       {/* Navigation */}
       <motion.nav 
         initial={{ y: -20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.6 }}
-        className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-md border-b border-border"
+        className="fixed top-0 left-0 right-0 z-50 bg-white/90 backdrop-blur-md border-b border-gray-200"
       >
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
@@ -113,23 +114,33 @@ export default function Landing() {
             <motion.div 
               whileHover={{ scale: 1.04 }}
               transition={{ type: "spring", stiffness: 260, damping: 18 }}
-              className="text-2xl font-bold tracking-tight cursor-pointer"
+              className="text-4xl font-bold tracking-tight cursor-pointer text-red-600"
               onClick={() => scrollToSection('hero')}
             >
-              DS
+              ResQX
             </motion.div>
 
             {/* Navigation Links */}
             <div className="hidden md:flex items-center space-x-8">
               {[
                 { label: "Home", id: "hero" },
-                { label: "Rescue Team", id: "rescue-team", isDropdown: true },
+                { label: "Rescue Team", id: "rescue-team", isButton: true },
                 { label: "Disaster Radar", id: "disaster-radar", isDropdown: true },
                 { label: "Features", id: "features", isDropdown: true },
                 { label: "About", id: "about" },
               ].map((item) => (
                 <div key={item.id}>
-                  {item.isDropdown ? (
+                  {item.isButton ? (
+                    <motion.button
+                      onClick={() => navigate('/rescue-team')}
+                      whileHover={{ y: -1 }}
+                      whileTap={{ scale: 0.98 }}
+                      transition={{ type: "spring", stiffness: 300, damping: 18 }}
+                      className="relative text-foreground hover:text-primary transition-colors font-medium"
+                    >
+                      {item.label}
+                    </motion.button>
+                  ) : item.isDropdown ? (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <motion.button
@@ -160,13 +171,12 @@ export default function Landing() {
                             <DropdownMenuItem onClick={() => setIsNotificationThemeOpen(true)}>
                               Notification Theme Customizer
                             </DropdownMenuItem>
-                            <DropdownMenuItem>Option 4</DropdownMenuItem>
                           </>
                         ) : item.id === 'features' ? (
                           <>
-                            <DropdownMenuItem>Option 1</DropdownMenuItem>
-                            <DropdownMenuItem>Option 2</DropdownMenuItem>
-                            <DropdownMenuItem>Option 3</DropdownMenuItem>
+                            <DropdownMenuItem>Disaster Classifier & Disaster Level Detector</DropdownMenuItem>
+                            <DropdownMenuItem>Rescue Team Manpower Allot</DropdownMenuItem>
+                            <DropdownMenuItem>Shortest Route Derivation from Nearest Rescue Centre</DropdownMenuItem>
                           </>
                         ) : null}
                       </DropdownMenuContent>
@@ -207,18 +217,18 @@ export default function Landing() {
               initial={{ y: 30, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ duration: 0.8, delay: 0.2 }}
-              className="text-5xl md:text-7xl font-bold tracking-tight mb-8 leading-tight"
+              className="text-5xl md:text-7xl font-bold tracking-tight mb-8 leading-tight text-black"
             >
               Protecting Lives Through
               <br />
-              <span className="text-primary">Smart Disaster Management</span>
+              <span className="text-red-600">Smart Disaster Management</span>
             </motion.h1>
             
             <motion.p 
               initial={{ y: 30, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ duration: 0.8, delay: 0.4 }}
-              className="text-xl md:text-2xl text-muted-foreground mb-12 max-w-3xl mx-auto leading-relaxed"
+              className="text-xl md:text-2xl text-black mb-12 max-w-3xl mx-auto leading-relaxed"
             >
               "When disaster strikes, every second counts. Our advanced technology and dedicated teams ensure rapid response and effective coordination to save lives and minimize damage."
             </motion.p>
@@ -232,7 +242,7 @@ export default function Landing() {
                 <Button 
                   onClick={() => scrollToSection('discover')}
                   size="lg"
-                  className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium px-8 py-4 text-lg"
+                  className="bg-red-600 hover:bg-red-700 text-white font-medium px-8 py-4 text-lg"
                 >
                   Discover How
                   <ArrowDown className="ml-2 h-5 w-5" />
@@ -253,10 +263,10 @@ export default function Landing() {
             viewport={{ once: true }}
             className="text-center mb-20"
           >
-            <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-6">
+            <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-6 text-red-600">
               How We Make a Difference
             </h2>
-            <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
+            <p className="text-xl text-black max-w-3xl mx-auto">
               Our comprehensive disaster management platform combines cutting-edge technology with human expertise to deliver unparalleled emergency response capabilities.
             </p>
           </motion.div>
@@ -285,13 +295,13 @@ export default function Landing() {
                 whileInView={{ y: 0, opacity: 1 }}
                 transition={{ duration: 0.6, delay: index * 0.2 }}
                 viewport={{ once: true }}
-                className="text-center p-8 rounded-2xl bg-background border border-border hover:shadow-lg transition-all duration-300"
+                className="text-center p-8 rounded-2xl bg-white border border-gray-200 hover:shadow-lg transition-all duration-300"
               >
-                <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                  <item.icon className="h-8 w-8 text-primary" />
+                <div className="w-16 h-16 bg-red-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                  <item.icon className="h-8 w-8 text-red-600" />
                 </div>
-                <h3 className="text-2xl font-bold mb-4">{item.title}</h3>
-                <p className="text-muted-foreground leading-relaxed">{item.description}</p>
+                <h3 className="text-2xl font-bold mb-4 text-red-600">{item.title}</h3>
+                <p className="text-black leading-relaxed">{item.description}</p>
               </motion.div>
             ))}
           </div>
@@ -308,10 +318,10 @@ export default function Landing() {
             viewport={{ once: true }}
             className="text-center mb-20"
           >
-            <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-6">
+            <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-6 text-red-600">
               Elite Rescue Teams
             </h2>
-            <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
+            <p className="text-xl text-black max-w-3xl mx-auto">
               Our specialized rescue teams are equipped with state-of-the-art technology and undergo rigorous training to handle any emergency situation with precision and care.
             </p>
           </motion.div>
@@ -365,10 +375,10 @@ export default function Landing() {
             viewport={{ once: true }}
             className="text-center mb-20"
           >
-            <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-6">
+            <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-6 text-red-600">
               Disaster Radar System
             </h2>
-            <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
+            <p className="text-xl text-black max-w-3xl mx-auto">
               Our advanced radar network provides real-time tracking and early warning systems for natural disasters, giving communities precious time to prepare and evacuate.
             </p>
           </motion.div>
@@ -422,10 +432,10 @@ export default function Landing() {
             viewport={{ once: true }}
             className="text-center mb-20"
           >
-            <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-6">
+            <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-6 text-red-600">
               Platform Features
             </h2>
-            <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
+            <p className="text-xl text-black max-w-3xl mx-auto">
               Comprehensive tools and capabilities designed to streamline disaster management operations and improve emergency response effectiveness.
             </p>
           </motion.div>
@@ -483,10 +493,10 @@ export default function Landing() {
             viewport={{ once: true }}
             className="text-center mb-20"
           >
-            <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-6">
+            <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-6 text-red-600">
               About Our Mission
             </h2>
-            <p className="text-xl text-muted-foreground max-w-4xl mx-auto leading-relaxed">
+            <p className="text-xl text-black max-w-4xl mx-auto leading-relaxed">
               Founded with the vision of creating safer communities, we leverage cutting-edge technology and human expertise to revolutionize disaster management. Our commitment extends beyond emergency response to building resilient societies that can withstand and recover from natural disasters.
             </p>
           </motion.div>
@@ -527,12 +537,12 @@ export default function Landing() {
       </section>
 
       {/* Footer */}
-      <footer className="bg-background border-t border-border py-16 px-6">
+      <footer className="bg-white border-t border-gray-200 py-16 px-6">
         <div className="max-w-7xl mx-auto">
           <div className="grid md:grid-cols-4 gap-12 mb-12">
             {/* Company Info */}
             <div>
-              <div className="text-2xl font-bold mb-4">DS</div>
+              <div className="text-2xl font-bold mb-4 text-red-600">ResQX</div>
               <p className="text-muted-foreground mb-6">
                 Leading the future of disaster management through innovation and dedication.
               </p>
@@ -593,7 +603,7 @@ export default function Landing() {
           </div>
 
           <div className="border-t border-border pt-8 text-center text-muted-foreground">
-            <p>&copy; 2024 DS - Disaster Management Solutions. All rights reserved.</p>
+            <p>&copy; 2025 QuantumGlitch. All rights reserved.</p>
           </div>
         </div>
       </footer>
