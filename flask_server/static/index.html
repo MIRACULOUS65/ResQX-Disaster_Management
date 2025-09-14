@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Disaster Classification Model</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        h1 {
+            color: #d32f2f;
+            text-align: center;
+        }
+        .container {
+            border: 1px solid #ddd;
+            padding: 20px;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+        .upload-form {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .file-input {
+            padding: 10px;
+            border: 1px dashed #aaa;
+            border-radius: 5px;
+        }
+        .submit-btn {
+            background-color: #d32f2f;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .submit-btn:hover {
+            background-color: #b71c1c;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            display: none;
+        }
+        .result.show {
+            display: block;
+        }
+        .result-item {
+            margin-bottom: 10px;
+        }
+        .result-label {
+            font-weight: bold;
+        }
+        .preview-image {
+            max-width: 100%;
+            max-height: 300px;
+            margin-top: 10px;
+            border-radius: 5px;
+        }
+        .loader {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #d32f2f;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+            display: none;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <h1>Disaster Classification Model</h1>
+    
+    <div class="container">
+        <h2>Upload an Image for Analysis</h2>
+        <form id="upload-form" class="upload-form">
+            <div class="file-input">
+                <input type="file" id="image-upload" name="file" accept="image/*" required>
+            </div>
+            <div>
+                <button type="submit" class="submit-btn">Analyze Image</button>
+            </div>
+        </form>
+        
+        <div id="loader" class="loader"></div>
+        
+        <div id="preview-container">
+            <img id="preview-image" class="preview-image" style="display: none;">
+        </div>
+        
+        <div id="result" class="result">
+            <h3>Analysis Results</h3>
+            <div class="result-item">
+                <span class="result-label">Disaster Type:</span> 
+                <span id="disaster-type"></span>
+            </div>
+            <div class="result-item">
+                <span class="result-label">Confidence:</span> 
+                <span id="confidence"></span>
+            </div>
+            <div class="result-item">
+                <span class="result-label">Severity Level:</span> 
+                <span id="severity-level"></span>
+            </div>
+            <div class="result-item">
+                <span class="result-label">Severity Category:</span> 
+                <span id="severity-category"></span>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const form = document.getElementById('upload-form');
+            const imageUpload = document.getElementById('image-upload');
+            const previewImage = document.getElementById('preview-image');
+            const resultContainer = document.getElementById('result');
+            const loader = document.getElementById('loader');
+            
+            // Preview image before upload
+            imageUpload.addEventListener('change', function() {
+                const file = this.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        previewImage.src = e.target.result;
+                        previewImage.style.display = 'block';
+                    }
+                    reader.readAsDataURL(file);
+                }
+            });
+            
+            // Handle form submission
+            form.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const formData = new FormData();
+                const file = imageUpload.files[0];
+                
+                if (!file) {
+                    alert('Please select an image file');
+                    return;
+                }
+                
+                formData.append('file', file);
+                
+                // Show loader
+                loader.style.display = 'block';
+                resultContainer.classList.remove('show');
+                
+                // Send request to API
+                fetch('http://localhost:5000/predict', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // Hide loader
+                    loader.style.display = 'none';
+                    
+                    // Display results
+                    document.getElementById('disaster-type').textContent = data.disaster_type;
+                    document.getElementById('confidence').textContent = data.confidence;
+                    document.getElementById('severity-level').textContent = data.disaster_level;
+                    document.getElementById('severity-category').textContent = data.severity_category;
+                    
+                    // Show result container
+                    resultContainer.classList.add('show');
+                })
+                .catch(error => {
+                    // Hide loader
+                    loader.style.display = 'none';
+                    alert('Error: ' + error.message + '\nMake sure the Flask server is running on http://localhost:5000');
+                });
+            });
+        });
+    </script>
+</body>
+</html>

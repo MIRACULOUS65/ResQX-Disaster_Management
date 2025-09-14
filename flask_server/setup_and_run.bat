@@ -1,0 +1,13 @@
+@echo off
+echo Setting up Disaster Classification Model...
+
+echo Installing required packages...
+pip install -r requirements.txt
+
+echo.
+echo Training the model...
+python train.py
+
+echo.
+echo Starting the Flask server...
+python app.py

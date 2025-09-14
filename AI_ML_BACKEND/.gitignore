@@ -1,6 +1,0 @@
-node_modules/
-uploads/
-__pycache__/
-flask_server/__pycache__/
-flask_server/dataset/*.pkl
-.env
